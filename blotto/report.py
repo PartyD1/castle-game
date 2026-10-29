@@ -232,6 +232,27 @@ def _analysis_section(R):
     return L
 
 
+def _supplementary_section(S):
+    L = ["## Supplementary: expected vs robust trade-off and artifact checks", "",
+         "Produced by `scripts/supplementary.py` on the same holdout populations.", ""]
+    for key, title in (("g1_pareto_all7", "all 7 scenarios"),
+                       ("g1_pareto_excl_adversarial", "6 scenarios, excluding the adversarial one (which is built against our own finalists)")):
+        L += [f"### Game 1 exact Pareto frontier: best mean for each worst-case floor ({title})", "",
+              "Computed over all 4,598,126 allocations.", "",
+              _table(["allocation", "mean over scenarios", "worst scenario"],
+                     [[_a(r["alloc"]), _f(r["mean"]), _f(r["worst"])] for r in S[key]]), ""]
+    rows = []
+    for e in S["g2_smoothing"]:
+        rows.append([_a(e["alloc"]), _f(e["raw"]["mean"]), _f(e["raw"]["worst"]), _f(e["raw"]["balanced"]),
+                     _f(e["smoothed"]["mean"]), _f(e["smoothed"]["worst"]), _f(e["smoothed"]["balanced"])])
+    L += ["### Game 2: do the finalists rely on exact opponent soldier counts?", "",
+          "Every holdout opponent gets 6 random single-soldier moves (which blurs spikes at specific counts such as "
+          "40 or 60), then each candidate is re-scored on 200,000 groups per scenario.", "",
+          _table(["allocation", "mean (raw)", "worst (raw)", "balanced (raw)", "mean (smoothed)", "worst (smoothed)",
+                  "balanced (smoothed)"], rows), ""]
+    return L
+
+
 def _meta_section(R):
     m = R["meta"]
     rows = [[s["stage"], s["seconds"], s["peak_mb"], "yes" if s["completed"] else "NO"] for s in m["stages"]]
@@ -259,5 +280,9 @@ def write_report(R: dict, path: Path):
     if "g2" in R:
         L += _g2_section(R["g2"])
     L += _analysis_section(R)
+    supp = path.parent / "data" / "supplementary.json"
+    if supp.exists():
+        import json
+        L += _supplementary_section(json.loads(supp.read_text()))
     L += _meta_section(R)
     path.write_text("\n".join(L))
