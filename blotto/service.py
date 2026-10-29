@@ -140,7 +140,9 @@ def build_populations(cfg: GameConfig, game: str, pop_size: int, seed: int, cust
 
 def meta() -> dict:
     off = _offline_pools()
-    return {"defaults": DEFAULT_GAME.to_dict(), "scenarios": SCENARIOS, "descriptions": SCENARIO_DESCRIPTIONS,
+    import platform
+    return {"versions": {"python": platform.python_version(), "numpy": np.__version__},
+            "defaults": DEFAULT_GAME.to_dict(), "scenarios": SCENARIOS, "descriptions": SCENARIO_DESCRIPTIONS,
             "families": list(FAMILIES) + ["adversary"], "limits": LIMITS,
             "offline_pools": {g: {k: len(v) for k, v in d.items()} for g, d in off.items()}}
 

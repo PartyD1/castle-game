@@ -1,2 +1,3 @@
-numpy>=2.0
-fastapi>=0.110
+# pinned so deployed simulations reproduce the offline run's random streams exactly
+numpy==2.5.4
+fastapi==0.162.0
