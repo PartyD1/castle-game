@@ -44,7 +44,10 @@ The dashboard lets you change castle values, soldier count, payouts and opponent
 evaluate your own allocations in both games, find exact Game 1 best responses, run the Game 2 optimizer,
 run self-play, and hold round-robin tournaments among your own list.
 
-With the official rules, seed 2026 and 10,000 opponents per scenario, it rebuilds exactly the holdout
-populations used in the report. Changing the rules recomputes the strategic opponent pools at reduced size.
+With the official rules, seed 2026 and 10,000 opponents per scenario, it rebuilds the holdout populations used
+in the report: exactly when run locally on the machine that produced the report. On Vercel (x86 Linux),
+last-bit floating-point differences in `exp`/`log` occasionally flip a rounding decision when generating an
+opponent. In testing, 6 of 7 Game 1 scenario scores matched to 4 decimals and broad_mixture differed by 0.011
+points. Changing the rules recomputes the strategic opponent pools at reduced size.
 
 Deploy: `vercel deploy` (FastAPI is detected from `app.py`; `public/` is served statically).
