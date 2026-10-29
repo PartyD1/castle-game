@@ -48,6 +48,23 @@ def g1_best_response(opps: np.ndarray, cfg: GameConfig = DEFAULT_GAME, weights=N
     return g1_best_response_dp(g1_tables(opps, cfg, weights))
 
 
+def g2_best_response(opps: np.ndarray, rng: np.random.Generator, cfg: GameConfig = DEFAULT_GAME,
+                     groups: int = 5000, pop: int = 80, generations: int = 25, n_local: int = 3,
+                     init: np.ndarray | None = None, k: int = 20):
+    """Approximate Game 2 best response: evolutionary search then hill climbing on one CRN field.
+
+    The result is optimal only for the sampled field; callers must re-validate
+    on fresh groups before trusting the score.
+    """
+    from ..vectorized import G2Field
+    from .search import evolutionary, local_search
+
+    field = G2Field.from_population(opps, rng, groups, cfg)
+    ev = evolutionary(field.mean_payout, rng, cfg, pop=pop, generations=generations, init=init, k=k)
+    ls = local_search(field.mean_payout, ev.top[:n_local], cfg, k=k)
+    return ls if ls.best_score >= ev.best_score else ev
+
+
 def g1_near_optimal(table: np.ndarray, tol: float, cfg: GameConfig = DEFAULT_GAME, cap: int = 100_000):
     """All allocations within `tol` points of the exact optimum (up to `cap`, best first)."""
     allocs = all_allocations(cfg)
