@@ -7,6 +7,7 @@ best-so-far history for convergence plots.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -93,7 +94,9 @@ def mutate(rng, X, max_chunk=10, p_big=0.3):
 
 def evolutionary(objective: Objective, rng: np.random.Generator, cfg: GameConfig = DEFAULT_GAME,
                  pop: int = 200, generations: int = 60, elite_frac: float = 0.2, k: int = 50,
-                 init: np.ndarray | None = None, patience: int = 15) -> SearchResult:
+                 init: np.ndarray | None = None, patience: int = 15,
+                 deadline: float | None = None) -> SearchResult:
+    """`deadline` is a time.perf_counter() value after which the search stops early."""
     S = cfg.soldiers
     P = random_candidates(rng, pop, cfg)
     if init is not None and len(init):
@@ -121,7 +124,7 @@ def evolutionary(objective: Objective, rng: np.random.Generator, cfg: GameConfig
         top, scores = _merge(top, scores, kids, kf, k)
         hist.append((evals, float(scores[0])))
         stale = stale + 1 if scores[0] <= prev + 1e-12 else 0
-        if stale >= patience:
+        if stale >= patience or (deadline is not None and time.perf_counter() > deadline):
             break
     return SearchResult("evolutionary", top, scores, hist, evals)
 
@@ -144,7 +147,8 @@ def neighbors(x: np.ndarray, steps=(1, 2, 3, 5, 10)) -> np.ndarray:
 
 
 def local_search(objective: Objective, starts: np.ndarray, cfg: GameConfig = DEFAULT_GAME,
-                 max_iter: int = 200, k: int = 50, steps=(1, 2, 3, 5, 10)) -> SearchResult:
+                 max_iter: int = 200, k: int = 50, steps=(1, 2, 3, 5, 10),
+                 deadline: float | None = None) -> SearchResult:
     """Steepest-ascent hill climbing from each start; returns the union of local optima."""
     starts = np.atleast_2d(starts).astype(np.int64)
     s0 = objective(starts)
@@ -158,7 +162,7 @@ def local_search(objective: Objective, starts: np.ndarray, cfg: GameConfig = DEF
             evals += len(nb)
             top, scores = _merge(top, scores, nb, fn, k)
             j = int(np.argmax(fn))
-            if fn[j] <= fx + 1e-12:
+            if fn[j] <= fx + 1e-12 or (deadline is not None and time.perf_counter() > deadline):
                 break
             x, fx = nb[j], fn[j]
         hist.append((evals, float(scores[0])))

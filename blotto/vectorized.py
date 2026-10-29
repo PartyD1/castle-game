@@ -211,7 +211,7 @@ class G2Field:
         for s in range(0, len(X), bs):
             cand, pay, h, e, win, tie = self._batch(X[s:s + bs])
             acc["mean"].append(pay.mean(1))
-            acc["se"].append(pay.std(1, ddof=1) / np.sqrt(self.size))
+            acc["se"].append(pay.std(1, ddof=1) / np.sqrt(self.size) if self.size > 1 else np.zeros(len(pay)))
             # tied players share the ranks they occupy: rank r gets 1/e if h <= r < h+e
             r = np.arange(4)[None, None, :]
             occ = (r >= h[..., None]) & (r < (h + e)[..., None])
