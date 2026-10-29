@@ -21,7 +21,7 @@ from .optimize.best_response import g1_best_response_dp, g1_top_k
 from .optimize.search import evolutionary, local_search, random_search
 from .optimize.self_play import g1_fictitious_play, g2_fictitious_play
 from .populations import (SCENARIO_DESCRIPTIONS, SCENARIOS, adversary_pool_g1, adversary_pool_g2, build_pools,
-                          sample_population)
+                          sample_population, scenario_seed)
 from .vectorized import G2Field, as_alloc_array, g1_scores, g1_tables
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,11 +113,14 @@ def build_populations(cfg: GameConfig, game: str, pop_size: int, seed: int, cust
                      "tick 'attack my allocations' to build one.")
     names = scenarios or list(SCENARIOS)
     out = {}
-    for i, n in enumerate(names):
+    for n in names:
         w = SCENARIOS[n]
         if "adversary" in w and "adversary" not in P:
             continue
-        out[n] = sample_population(w, pop_size, np.random.default_rng([seed, i]), P, cfg, n)
+        # same seeding as the offline holdout populations: seed 2026 with 10,000
+        # opponents and the official rules rebuilds the report's populations exactly
+        rng = np.random.default_rng(scenario_seed(seed, n, "holdout", game))
+        out[n] = sample_population(w, pop_size, rng, P, cfg, n)
     if custom_weights:
         w = {k: float(v) for k, v in custom_weights.items() if float(v) > 0}
         bad = [k for k in w if k not in FAMILIES and k != "adversary"]
@@ -146,7 +149,7 @@ def evaluate(req: dict) -> dict:
     t0 = time.perf_counter()
     cfg = make_config(req.get("config"))
     A = parse_allocs(req.get("allocations"), cfg, LIMITS["allocations"])
-    seed = int(req.get("seed", 1))
+    seed = int(req.get("seed", 2026))
     pop_size = int(req.get("pop_size", 10_000))
     groups = int(min(max(int(req.get("g2_groups", 50_000)), 1000), LIMITS["g2_groups"]))
     attack = A if req.get("attack_my_allocations") else None
@@ -194,7 +197,7 @@ def evaluate(req: dict) -> dict:
 
 
 def _objective_pops(req, cfg, game):
-    seed = int(req.get("seed", 1))
+    seed = int(req.get("seed", 2026))
     target = req.get("target", "broad_mixture")
     custom = req.get("custom_weights") if target == "custom" else None
     scen = None if target in ("balanced", "custom") else [target]
@@ -237,7 +240,7 @@ def optimize_g2(req: dict) -> dict:
     budget = float(min(max(float(req.get("time_budget", 20)), 3), LIMITS["time_budget"]))
     groups = int(min(max(int(req.get("groups", 5000)), 1000), 50_000))
     target, pops, notes = _objective_pops(req, cfg, "g2")
-    rng = np.random.default_rng(int(req.get("seed", 1)))
+    rng = np.random.default_rng(int(req.get("seed", 2026)))
     fields = {n: G2Field.from_population(p.allocs, rng, groups, cfg) for n, p in pops.items()}
 
     def obj(X):
@@ -250,7 +253,7 @@ def optimize_g2(req: dict) -> dict:
     ls = local_search(obj, ev.top[:2], cfg, steps=(1, 2, 5), deadline=t0 + budget * 0.95)
     top = np.unique(np.concatenate([ev.top[:10], ls.top[:10]]), axis=0)
     # validate on fresh groups so the reported score is not the optimizer's own (optimistic) estimate
-    vrng = np.random.default_rng(int(req.get("seed", 1)) + 1000)
+    vrng = np.random.default_rng(int(req.get("seed", 2026)) + 1000)
     val = {n: G2Field.from_population(p.allocs, vrng, max(4 * groups, 20_000), cfg).evaluate(top) for n, p in pops.items()}
     V = np.stack([v["mean"] for v in val.values()], 1)
     score = 0.5 * V.mean(1) + 0.5 * V.min(1) if V.shape[1] > 1 else V[:, 0]
@@ -280,7 +283,7 @@ def self_play(req: dict) -> dict:
         res = g1_fictitious_play(init, iters, anchor, cfg)
     elif game == "g2":
         iters = int(min(max(int(req.get("iters", 6)), 2), LIMITS["selfplay_iters_g2"]))
-        res = g2_fictitious_play(init, np.random.default_rng(int(req.get("seed", 1))), iters, anchor,
+        res = g2_fictitious_play(init, np.random.default_rng(int(req.get("seed", 2026))), iters, anchor,
                                  field_size=3000, groups=2500, cfg=cfg, pop=60, generations=15, n_local=2)
     else:
         raise UserError("game must be g1 or g2")
