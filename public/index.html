@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Castle Allocation Lab</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root { --bg:#fafafa; --fg:#1d1d1f; --muted:#666; --card:#fff; --line:#ddd; --accent:#2364aa; --bad:#b3261e; --good:#1b7f3b; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16181c; --fg:#e8e8ea; --muted:#9a9aa0; --card:#1f2228; --line:#353841; --accent:#6ea8fe; --bad:#ff8a80; --good:#7bd88f; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header span { color:var(--muted); font-size:12px; }
+  nav { display:flex; gap:4px; padding:8px 16px; flex-wrap:wrap; border-bottom:1px solid var(--line); }
+  nav button { background:none; border:1px solid var(--line); color:var(--fg); padding:6px 12px; border-radius:6px; cursor:pointer; }
+  nav button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { padding:16px; max-width:1400px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns: 340px 1fr; gap:16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:14px; }
+  .card h2 { font-size:15px; margin:0 0 8px; }
+  .card h3 { font-size:13px; margin:12px 0 6px; }
+  label { display:block; font-size:12px; color:var(--muted); margin-top:6px; }
+  input, select, textarea { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:4px 6px; }
+  input[type=number] { width:64px; }
+  .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  button.run { background:var(--accent); color:#fff; border:none; padding:7px 14px; border-radius:6px; cursor:pointer; margin-top:8px; }
+  button.run:disabled { opacity:.5; cursor:wait; }
+  button.small { font-size:12px; padding:3px 8px; background:none; border:1px solid var(--line); color:var(--fg); border-radius:4px; cursor:pointer; }
+  table { border-collapse:collapse; width:100%; font-size:12px; font-variant-numeric: tabular-nums; }
+  th, td { border-bottom:1px solid var(--line); padding:4px 6px; text-align:right; white-space:nowrap; }
+  th:first-child, td:first-child { text-align:left; }
+  .scroll { overflow-x:auto; }
+  .muted { color:var(--muted); font-size:12px; }
+  .err { color:var(--bad); font-size:12px; white-space:pre-wrap; }
+  .ok { color:var(--good); }
+  .bad { color:var(--bad); }
+  .tab { display:none; }
+  .tab.on { display:block; }
+  .weights input[type=range] { width:120px; }
+  .weights .row { justify-content:space-between; }
+  .figs img { max-width:100%; border:1px solid var(--line); border-radius:4px; margin:6px 0; background:#fff; }
+  #report img { max-width:100%; background:#fff; }
+  #report table { margin:8px 0; }
+  .notes { font-size:12px; color:var(--muted); }
+  canvas { max-height:320px; }
+  code { font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Castle Allocation Lab</h1>
+  <span>Colonel Blotto: 5 castles. Game 1 head-to-head, Game 2 four-way. Change the rules and populations, then run simulations live.</span>
+</header>
+<nav id="nav">
+  <button data-tab="results" class="on">Recommendations</button>
+  <button data-tab="evaluate">Evaluate allocations</button>
+  <button data-tab="optimize">Optimize</button>
+  <button data-tab="selfplay">Self-play</button>
+  <button data-tab="tournament">Tournament</button>
+  <button data-tab="report">Full report</button>
+</nav>
+<main>
+<div class="grid">
+  <aside>
+    <div class="card">
+      <h2>Rules</h2>
+      <label>Castle values (C1–C5)</label>
+      <div class="row" id="values"></div>
+      <label>Soldiers per player</label>
+      <input type="number" id="soldiers" min="1" max="120" value="100">
+      <label>Game 2 payouts (1st–4th)</label>
+      <div class="row" id="payouts"></div>
+      <button class="small" id="resetRules" style="margin-top:8px">Reset to official rules</button>
+      <p class="muted">Changing rules makes the server recompute strategic opponent pools at reduced size (slower first request).</p>
+    </div>
+    <div class="card">
+      <h2>Population</h2>
+      <div class="row"><label style="margin:0">Opponents per scenario</label><input type="number" id="popSize" value="10000" min="100" max="20000" step="500" style="width:80px"></div>
+      <div class="row"><label style="margin:0">Seed</label><input type="number" id="seed" value="1"></div>
+      <label><input type="checkbox" id="useCustom"> Add a custom mixture</label>
+      <div class="weights" id="weights"></div>
+      <label><input type="checkbox" id="attack"> Rebuild the adversarial scenario to attack my allocations</label>
+      <details style="margin-top:8px"><summary class="muted">Scenario definitions</summary><div id="scenDefs" class="muted"></div></details>
+    </div>
+  </aside>
+
+  <section>
+    <!-- RESULTS -->
+    <div class="tab on" id="tab-results">
+      <div class="card"><h2>Precomputed recommendations (full offline run)</h2><div id="resSummary" class="muted">Loading…</div></div>
+      <div class="card"><h2>Game 1 top 10</h2><div class="scroll" id="resG1"></div></div>
+      <div class="card"><h2>Game 2 top 10</h2><div class="scroll" id="resG2"></div></div>
+      <div class="card figs"><h2>Figures</h2><div id="figs"></div></div>
+    </div>
+
+    <!-- EVALUATE -->
+    <div class="tab" id="tab-evaluate">
+      <div class="card">
+        <h2>Your allocations</h2>
+        <div id="allocRows"></div>
+        <div class="row">
+          <button class="small" id="addRow">+ add row</button>
+          <button class="small" id="fillPicks">use recommended picks</button>
+          <button class="small" id="fillBase">use some baselines</button>
+        </div>
+        <div class="row">
+          <label style="margin:0">Game 2 groups per scenario</label><input type="number" id="evalGroups" value="50000" min="1000" max="200000" step="10000" style="width:90px">
+        </div>
+        <button class="run" id="runEval">Run evaluation</button>
+        <div id="evalErr" class="err"></div>
+      </div>
+      <div class="card"><h2>Game 1: expected castle points (exact against each population)</h2><div class="scroll" id="evalG1"></div></div>
+      <div class="card"><h2>Game 2: expected placement payout (Monte Carlo, ± = 95% CI)</h2><div class="scroll" id="evalG2"></div>
+        <h3>Placement probabilities</h3><div class="row"><select id="posScen"></select></div><div class="scroll" id="evalPos"></div></div>
+      <div class="card"><h2>Per-castle win rate</h2><div class="row"><select id="castleGame"><option value="g1">Game 1</option><option value="g2">Game 2</option></select><select id="castleScen"></select></div><canvas id="castleChart"></canvas></div>
+      <div class="notes" id="evalNotes"></div>
+    </div>
+
+    <!-- OPTIMIZE -->
+    <div class="tab" id="tab-optimize">
+      <div class="card">
+        <h2>Game 1: exact best response</h2>
+        <p class="muted">Game 1 is additive across castles, so the best allocation against a population is found exactly (knapsack DP plus enumeration of every allocation).</p>
+        <div class="row"><label style="margin:0">Target</label><select id="brTarget"></select><label style="margin:0">Top k</label><input type="number" id="brK" value="10" min="1" max="50"></div>
+        <button class="run" id="runBR">Find best response</button>
+        <div id="brErr" class="err"></div>
+        <div class="scroll" id="brOut"></div>
+      </div>
+      <div class="card">
+        <h2>Game 2: optimizer (evolutionary + local search)</h2>
+        <p class="muted">Optimizes on one sampled set of groups (common random numbers), then re-validates the top allocations on fresh groups.</p>
+        <div class="row"><label style="margin:0">Target</label><select id="g2Target"></select>
+          <label style="margin:0">Time budget (s)</label><input type="number" id="g2Budget" value="20" min="3" max="60">
+          <label style="margin:0">Training groups</label><input type="number" id="g2Groups" value="5000" min="1000" max="50000" step="1000" style="width:80px"></div>
+        <button class="run" id="runG2">Run optimizer</button>
+        <div id="g2Err" class="err"></div>
+        <div class="scroll" id="g2Out"></div>
+        <canvas id="g2Chart"></canvas>
+      </div>
+    </div>
+
+    <!-- SELF-PLAY -->
+    <div class="tab" id="tab-selfplay">
+      <div class="card">
+        <h2>Self-play (fictitious play)</h2>
+        <p class="muted">Each iteration best-responds to the starting population (weight = anchor) mixed with every earlier best response.</p>
+        <div class="row"><label style="margin:0">Game</label><select id="spGame"><option value="g1">Game 1</option><option value="g2">Game 2 (slower)</option></select>
+          <label style="margin:0">Start from</label><select id="spStart"></select>
+          <label style="margin:0">Iterations</label><input type="number" id="spIters" value="60">
+          <label style="margin:0">Anchor</label><input type="number" id="spAnchor" value="0.5" step="0.1" min="0" max="0.95"></div>
+        <button class="run" id="runSP">Run self-play</button>
+        <div id="spErr" class="err"></div>
+        <div id="spSummary"></div>
+        <canvas id="spChart"></canvas>
+        <div class="scroll" id="spOut"></div>
+      </div>
+    </div>
+
+    <!-- TOURNAMENT -->
+    <div class="tab" id="tab-tournament">
+      <div class="card">
+        <h2>Round robin among your own list</h2>
+        <p class="muted">One allocation per line, optionally prefixed by a name and colon, e.g. <code>mine: 0 10 20 30 40</code>. Game 1 is computed exactly over all pairs. With 4 or more entries, Game 2 is computed exactly over every group.</p>
+        <textarea id="tourText" rows="8" style="width:100%">equal: 20 20 20 20 20
+proportional: 7 13 20 27 33
+linear: 0 10 20 30 40
+top2: 0 0 0 50 50
+skip-c1: 0 25 25 25 25</textarea>
+        <button class="run" id="runTour">Run tournament</button>
+        <div id="tourErr" class="err"></div>
+        <div class="scroll" id="tourOut"></div>
+      </div>
+    </div>
+
+    <!-- REPORT -->
+    <div class="tab" id="tab-report"><div class="card" id="report">Loading report…</div></div>
+  </section>
+</div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (x, d = 3) => (x == null || Number.isNaN(x)) ? "–" : Number(x).toFixed(d);
+const vec = (a) => "[" + a.join(", ") + "]";
+const DEFAULTS = { values: [1, 2, 3, 4, 5], soldiers: 100, payouts: [9, 4, 2, 0] };
+let META = null, RESULTS = null, LAST_EVAL = null, charts = {};
+
+function chart(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart($(id), cfg); }
+
+// ---- tabs
+$("nav").addEventListener("click", (e) => {
+  const t = e.target.dataset.tab; if (!t) return;
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  document.querySelectorAll(".tab").forEach(s => s.classList.toggle("on", s.id === "tab-" + t));
+  try { localStorage.setItem("tab", t); } catch (_) {}
+  if (t === "report") loadReport();
+});
+
+// ---- rules inputs
+function numInputs(container, vals, step) {
+  $(container).innerHTML = vals.map((v, i) => `<input type="number" step="${step}" value="${v}" data-i="${i}">`).join("");
+}
+function resetRules() {
+  numInputs("values", DEFAULTS.values, 1); numInputs("payouts", DEFAULTS.payouts, 0.5); $("soldiers").value = DEFAULTS.soldiers;
+  renderAllocRows();
+}
+$("resetRules").onclick = resetRules;
+const getConfig = () => ({
+  values: [...$("values").querySelectorAll("input")].map(x => Number(x.value)),
+  soldiers: Number($("soldiers").value),
+  payouts: [...$("payouts").querySelectorAll("input")].map(x => Number(x.value)),
+});
+$("soldiers").addEventListener("input", renderAllocSums);
+
+// ---- population inputs
+function customWeights() {
+  if (!$("useCustom").checked) return null;
+  const w = {}; $("weights").querySelectorAll("input[type=range]").forEach(r => { if (Number(r.value) > 0) w[r.dataset.f] = Number(r.value); });
+  return w;
+}
+function common(extra) {
+  return Object.assign({ config: getConfig(), pop_size: Number($("popSize").value), seed: Number($("seed").value),
+                         custom_weights: customWeights() }, extra);
+}
+function targetOptions(sel, withBalanced) {
+  const names = Object.keys(META.scenarios).filter(n => n !== "adversarial");
+  sel.innerHTML = (withBalanced ? `<option value="balanced">balanced over all scenarios</option>` : "") +
+    names.map(n => `<option value="${n}" ${n === "broad_mixture" ? "selected" : ""}>${n}</option>`).join("") +
+    `<option value="custom">custom mixture</option>`;
+}
+
+// ---- allocation rows
+let allocs = [[1, 2, 5, 37, 55], [0, 10, 20, 30, 40]];
+function renderAllocRows() {
+  $("allocRows").innerHTML = allocs.map((a, r) => `<div class="row" data-r="${r}">` +
+    a.map((v, c) => `<input type="number" min="0" value="${v}" data-c="${c}">`).join("") +
+    `<span class="muted sum"></span><button class="small" data-del="${r}">✕</button></div>`).join("");
+  renderAllocSums();
+}
+function readAllocs() {
+  allocs = [...$("allocRows").children].map(row => [...row.querySelectorAll("input")].map(x => Number(x.value)));
+  return allocs;
+}
+function renderAllocSums() {
+  const S = Number($("soldiers").value);
+  [...$("allocRows").children].forEach(row => {
+    const s = [...row.querySelectorAll("input")].reduce((t, x) => t + Number(x.value || 0), 0);
+    const el = row.querySelector(".sum"); el.textContent = `sum ${s}` + (s === S ? " ✓" : ` (need ${S})`);
+    el.className = "muted sum " + (s === S ? "ok" : "bad");
+  });
+}
+$("allocRows").addEventListener("input", renderAllocSums);
+$("allocRows").addEventListener("click", (e) => { if (e.target.dataset.del != null) { readAllocs(); allocs.splice(+e.target.dataset.del, 1); renderAllocRows(); } });
+$("addRow").onclick = () => { readAllocs(); allocs.push([20, 20, 20, 20, 20]); renderAllocRows(); };
+$("fillPicks").onclick = () => {
+  if (!RESULTS) return;
+  allocs = [RESULTS.g1.ranked[0].alloc, RESULTS.g1.ranked[1].alloc];
+  if (RESULTS.g2) allocs.push(RESULTS.g2.ranked[0].alloc, RESULTS.g2.ranked[1].alloc);
+  renderAllocRows();
+};
+$("fillBase").onclick = () => { allocs = [[20, 20, 20, 20, 20], [7, 13, 20, 27, 33], [0, 10, 20, 30, 40], [0, 0, 0, 50, 50]]; renderAllocRows(); };
+
+// ---- API
+async function api(path, body, btn, errEl) {
+  $(errEl).textContent = ""; if (btn) { btn.disabled = true; btn.dataset.t = btn.textContent; btn.textContent = "Running…"; }
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+    if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
+    return d;
+  } catch (e) { $(errEl).textContent = "Error: " + e.message; return null; }
+  finally { if (btn) { btn.disabled = false; btn.textContent = btn.dataset.t; } }
+}
+
+// ---- evaluate
+$("runEval").onclick = async () => {
+  const A = readAllocs();
+  const d = await api("/api/evaluate", common({ allocations: A, g2_groups: Number($("evalGroups").value),
+                                                attack_my_allocations: $("attack").checked }), $("runEval"), "evalErr");
+  if (!d) return;
+  LAST_EVAL = d;
+  const head = (scen) => `<tr><th>allocation</th>${scen.map(s => `<th>${s}</th>`).join("")}<th>mean</th><th>worst</th><th>balanced</th></tr>`;
+  const g1 = d.g1;
+  $("evalG1").innerHTML = `<table>${head(g1.scenarios)}${g1.rows.map((r, i) => `<tr><td>${vec(d.allocations[i])}</td>` +
+    g1.scenarios.map(s => `<td>${fmt(r.scores[s])}</td>`).join("") + `<td>${fmt(r.mean)}</td><td>${fmt(r.worst)} <span class="muted">${r.worst_scenario}</span></td><td><b>${fmt(r.balanced)}</b></td></tr>`).join("")}</table>
+    <p class="muted">Out of ${g1.max_points} points per matchup (an even split is ${g1.max_points / 2}). Mean, worst and balanced exclude the custom mixture.</p>`;
+  const g2 = d.g2;
+  $("evalG2").innerHTML = `<table>${head(g2.scenarios)}${g2.rows.map((r, i) => `<tr><td>${vec(d.allocations[i])}</td>` +
+    g2.scenarios.map(s => `<td>${fmt(r.scores[s])}<span class="muted"> ±${fmt(1.96 * r.se[s], 3)}</span></td>`).join("") +
+    `<td>${fmt(r.mean)}</td><td>${fmt(r.worst)} <span class="muted">${r.worst_scenario}</span></td><td><b>${fmt(r.balanced)}</b></td></tr>`).join("")}</table>
+    <p class="muted">${g2.groups.toLocaleString()} random four-player groups per scenario.</p>`;
+  for (const id of ["posScen", "castleScen"]) $(id).innerHTML = g2.scenarios.map(s => `<option ${s === "broad_mixture" ? "selected" : ""}>${s}</option>`).join("");
+  renderPos(); renderCastle();
+  $("evalNotes").innerHTML = (d.notes || []).map(n => "• " + n).join("<br>") + `<br>Server time ${d.seconds}s.`;
+};
+function renderPos() {
+  if (!LAST_EVAL) return; const s = $("posScen").value, g2 = LAST_EVAL.g2;
+  $("evalPos").innerHTML = `<table><tr><th>allocation</th><th>1st</th><th>2nd</th><th>3rd</th><th>4th</th><th>castle pts</th></tr>` +
+    g2.rows.map((r, i) => `<tr><td>${vec(LAST_EVAL.allocations[i])}</td>${r.pos[s].map(p => `<td>${(100 * p).toFixed(1)}%</td>`).join("")}<td>${fmt(r.castle_points[s], 2)}</td></tr>`).join("") + `</table>`;
+}
+function renderCastle() {
+  if (!LAST_EVAL) return; const g = $("castleGame").value, s = $("castleScen").value;
+  const ds = LAST_EVAL.allocations.map((a, i) => {
+    const r = LAST_EVAL[g].rows[i];
+    const win = g === "g1" ? r.castle[s]?.win : r.castle_win[s];
+    return { label: vec(a), data: (win || []).map(x => 100 * x) };
+  });
+  chart("castleChart", { type: "bar", data: { labels: ["C1", "C2", "C3", "C4", "C5"], datasets: ds },
+    options: { scales: { y: { min: 0, max: 100, title: { display: true, text: g === "g1" ? "% of opponents beaten outright" : "% of groups won outright" } } } } });
+}
+$("posScen").onchange = renderPos; $("castleGame").onchange = renderCastle; $("castleScen").onchange = renderCastle;
+
+// ---- optimize
+$("runBR").onclick = async () => {
+  const d = await api("/api/best-response/g1", common({ target: $("brTarget").value, k: Number($("brK").value) }), $("runBR"), "brErr");
+  if (!d) return;
+  const scen = Object.keys(d.per_scenario);
+  $("brOut").innerHTML = `<p class="muted">${d.method} · ${d.seconds}s</p><table><tr><th>#</th><th>allocation</th><th>objective</th>${scen.map(s => `<th>${s}</th>`).join("")}</tr>` +
+    d.top.map((a, i) => `<tr><td>${i + 1}</td><td>${vec(a)}</td><td><b>${fmt(d.scores[i])}</b></td>${scen.map(s => `<td>${fmt(d.per_scenario[s][i])}</td>`).join("")}</tr>`).join("") + `</table>` +
+    (d.notes || []).map(n => `<div class="notes">• ${n}</div>`).join("");
+};
+$("runG2").onclick = async () => {
+  const d = await api("/api/optimize/g2", common({ target: $("g2Target").value, time_budget: Number($("g2Budget").value),
+                                                   groups: Number($("g2Groups").value) }), $("runG2"), "g2Err");
+  if (!d) return;
+  const scen = Object.keys(d.results[0].per_scenario);
+  $("g2Out").innerHTML = `<p class="muted">Objective: ${d.objective}. ${d.evaluations.toLocaleString()} evaluations in ${d.seconds}s. Scores below are re-validated on fresh groups.</p>
+    <table><tr><th>#</th><th>allocation</th><th>validated</th>${scen.map(s => `<th>${s}</th>`).join("")}<th>P(1st) ${scen[0]}</th></tr>` +
+    d.results.map((r, i) => `<tr><td>${i + 1}</td><td>${vec(r.alloc)}</td><td><b>${fmt(r.validated)}</b></td>${scen.map(s => `<td>${fmt(r.per_scenario[s])}<span class="muted"> ±${fmt(1.96 * r.se[s])}</span></td>`).join("")}<td>${(100 * r.pos[scen[0]][0]).toFixed(1)}%</td></tr>`).join("") + `</table>` +
+    (d.notes || []).map(n => `<div class="notes">• ${n}</div>`).join("");
+  chart("g2Chart", { type: "line", data: { datasets: [{ label: "best objective on training groups", data: d.history.map(([x, y]) => ({ x, y })), pointRadius: 0 }] },
+    options: { parsing: false, scales: { x: { type: "linear", title: { display: true, text: "evaluations" } } } } });
+};
+
+// ---- self-play
+$("spGame").onchange = () => { $("spIters").value = $("spGame").value === "g1" ? 60 : 6; };
+$("runSP").onclick = async () => {
+  const d = await api("/api/self-play", common({ game: $("spGame").value, target: $("spStart").value, iters: Number($("spIters").value),
+                                                 anchor: Number($("spAnchor").value) }), $("runSP"), "spErr");
+  if (!d) return;
+  $("spSummary").innerHTML = `<p><b>${d.verdict}</b>: ${d.distinct} distinct best responses, ${d.revisits} revisits, ${d.distinct_in_second_half} distinct in the second half. <span class="muted">${d.seconds}s</span></p>`;
+  chart("spChart", { type: "line", data: { labels: d.br_value.map((_, i) => i + 1), datasets: [
+    { label: "best-response value vs field", data: d.br_value, yAxisID: "y" },
+    { label: "L1 change from previous BR", data: d.l1_step, yAxisID: "y2" }] },
+    options: { scales: { y: { position: "left" }, y2: { position: "right", grid: { drawOnChartArea: false } } } } });
+  $("spOut").innerHTML = `<table><tr><th>iteration</th><th>best response</th><th>value</th><th>L1 step</th></tr>` +
+    d.best_responses.map((b, i) => `<tr><td>${i + 1}</td><td>${vec(b)}</td><td>${fmt(d.br_value[i])}</td><td>${d.l1_step[i]}</td></tr>`).join("") + `</table>`;
+};
+
+// ---- tournament
+$("runTour").onclick = async () => {
+  const names = [], A = [];
+  for (const line of $("tourText").value.split("\n").map(s => s.trim()).filter(Boolean)) {
+    const [n, rest] = line.includes(":") ? line.split(":", 2) : [null, line];
+    A.push(rest.trim().split(/[\s,]+/).map(Number)); names.push(n ? n.trim() : `#${A.length}`);
+  }
+  const d = await api("/api/tournament", { config: getConfig(), allocations: A, names }, $("runTour"), "tourErr");
+  if (!d) return;
+  const M = d.g1.matrix, half = getConfig().values.reduce((a, b) => a + b, 0) / 2;
+  let h = `<h3>Game 1 (row player's points vs column)</h3><table><tr><th></th>${names.map(n => `<th>${n}</th>`).join("")}<th>mean</th></tr>` +
+    M.map((row, i) => `<tr><td>${names[i]} ${vec(A[i])}</td>${row.map((v, j) => `<td class="${i === j ? "muted" : v > half ? "ok" : v < half ? "bad" : ""}">${i === j ? "–" : fmt(v, 1)}</td>`).join("")}<td><b>${fmt(d.g1.rows[i].mean)}</b></td></tr>`).join("") + `</table>`;
+  if (d.g2) h += `<h3>Game 2 (every group of 4)</h3><table><tr><th>allocation</th><th>mean payout</th><th>1st</th><th>2nd</th><th>3rd</th><th>4th</th><th>groups</th></tr>` +
+    d.g2.rows.map(r => `<tr><td>${r.name} ${vec(r.alloc)}</td><td><b>${fmt(r.mean)}</b></td>${r.pos.map(p => `<td>${(100 * p).toFixed(1)}%</td>`).join("")}<td>${r.groups}</td></tr>`).join("") + `</table>`;
+  else h += `<p class="muted">Add at least 4 entries for Game 2.</p>`;
+  $("tourOut").innerHTML = h;
+};
+
+// ---- precomputed results
+function rankedTable(G, game) {
+  const scen = G.scenario_names;
+  return `<table><tr><th>#</th><th>allocation</th><th>balanced</th><th>mean</th><th>worst</th>${scen.map(s => `<th>${s}</th>`).join("")}${game === "g2" ? "<th>P(1st/2nd/3rd/4th)</th><th>vs #1 (95% CI)</th>" : "<th>vs tailored counter</th>"}</tr>` +
+    G.ranked.slice(0, 10).map(r => `<tr><td>${r.rank}</td><td>${vec(r.alloc)}</td><td><b>${fmt(r.balanced)}</b></td><td>${fmt(r.mean)}</td><td>${fmt(r.worst)} <span class="muted">${r.worst_scenario}</span></td>` +
+      scen.map(s => `<td>${fmt(r.scenario_scores[s])}</td>`).join("") +
+      (game === "g2" ? `<td>${r.detail_stated_mixture.pos.map(p => (100 * p).toFixed(0) + "%").join(" / ")}</td><td>${r.paired_vs_top.verdict === "reference" ? "–" : fmt(r.paired_vs_top.mean_diff, 3) + " " + r.paired_vs_top.verdict}</td>`
+                     : `<td>${fmt(r.score_vs_counter, 1)}</td>`) + `</tr>`).join("") + `</table>`;
+}
+async function loadResults() {
+  try {
+    const r = await fetch("/data/results.json"); if (!r.ok) throw new Error(r.status);
+    RESULTS = await r.json();
+  } catch (e) { $("resSummary").textContent = "No precomputed results found (run scripts/run_all.py)."; return; }
+  const m = RESULTS.meta, g1 = RESULTS.g1.ranked[0], g2 = RESULTS.g2 && RESULTS.g2.ranked[0];
+  $("resSummary").innerHTML = `<p><b>Game 1 pick:</b> ${vec(g1.alloc)}: balanced ${fmt(g1.balanced)}, mean ${fmt(g1.mean)} pts, worst ${fmt(g1.worst)} (${g1.worst_scenario}).</p>` +
+    (g2 ? `<p><b>Game 2 pick:</b> ${vec(g2.alloc)}: balanced ${fmt(g2.balanced)}, mean payout ${fmt(g2.mean)}, worst ${fmt(g2.worst)} (${g2.worst_scenario}).</p>` : "") +
+    `<p class="muted">Run mode ${m.mode}, finished ${m.finished}, ${m.total_seconds}s, peak ${m.peak_mb} MB. Balanced = ½·mean over the 7 scenarios + ½·worst scenario, on held-out populations.</p>`;
+  $("resG1").innerHTML = rankedTable(RESULTS.g1, "g1");
+  if (RESULTS.g2) $("resG2").innerHTML = rankedTable(RESULTS.g2, "g2");
+  const figs = ["g1_heatmap", "g2_heatmap", "g2_placement", "g1_sensitivity", "g2_sensitivity", "g1_frontier", "g2_frontier",
+                "g1_convergence", "g2_convergence", "g1_self_play", "g2_self_play", "g1_seed_stability", "g2_seed_stability",
+                "population_profiles", "g2_points_vs_payout", "g1_baseline_round_robin"];
+  $("figs").innerHTML = figs.map(f => `<img loading="lazy" src="/figures/${f}.png" alt="${f}" onerror="this.remove()">`).join("");
+}
+let reportLoaded = false;
+async function loadReport() {
+  if (reportLoaded) return;
+  try {
+    const r = await fetch("/report.md"); if (!r.ok) throw new Error(r.status);
+    $("report").innerHTML = marked.parse(await r.text()); reportLoaded = true;
+  } catch (e) { $("report").textContent = "Report not found."; }
+}
+
+// ---- init
+(async function init() {
+  resetRules();
+  try {
+    META = await (await fetch("/api/meta")).json();
+  } catch (e) { META = null; }
+  if (META) {
+    $("weights").innerHTML = META.families.map(f => `<div class="row"><span class="muted">${f}</span><input type="range" min="0" max="10" value="${f === "proportional" ? 5 : f === "equal" ? 3 : 0}" data-f="${f}"><span class="muted" data-v="${f}"></span></div>`).join("");
+    $("weights").addEventListener("input", () => $("weights").querySelectorAll("input").forEach(r => $("weights").querySelector(`[data-v="${r.dataset.f}"]`).textContent = r.value));
+    $("weights").dispatchEvent(new Event("input"));
+    $("scenDefs").innerHTML = Object.entries(META.scenarios).map(([n, w]) => `<p><b>${n}</b>: ${META.descriptions[n]}<br>${Object.entries(w).map(([f, v]) => `${f} ${v}`).join(", ")}</p>`).join("");
+    targetOptions($("brTarget"), true); targetOptions($("g2Target"), true); targetOptions($("spStart"), false);
+  } else {
+    $("resSummary").textContent = "API unavailable.";
+  }
+  try { const t = localStorage.getItem("tab"); if (t) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch (_) {}
+  loadResults();
+})();
+</script>
+</body>
+</html>
