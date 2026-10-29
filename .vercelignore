@@ -6,3 +6,4 @@ tests
 scripts
 outputs/figures
 outputs/data/g2_screen.npz
+.env*

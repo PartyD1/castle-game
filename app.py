@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from blotto import service
@@ -74,7 +74,9 @@ async def tournament(request: Request):
 
 @app.get("/")
 def index():
-    return FileResponse(PUBLIC / "index.html")
+    # on Vercel public/ is served by the CDN and is not bundled into the function
+    page = PUBLIC / "index.html"
+    return FileResponse(page) if page.exists() else RedirectResponse("/index.html")
 
 
 if PUBLIC.exists():
