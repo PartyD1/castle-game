@@ -87,6 +87,9 @@ def main():
     with log.stage("figures"):
         make_all(results, out / "figures")
     write_report(results, out / "REPORT.md")
+    if out.resolve() == (ROOT / "outputs").resolve():
+        from publish_static import main as publish
+        publish()
     log("all done")
 
 

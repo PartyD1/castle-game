@@ -1,0 +1,8 @@
+.venv
+.claude
+.pytest_cache
+**/__pycache__
+tests
+scripts
+outputs/figures
+outputs/data/g2_screen.npz
